@@ -1,0 +1,7 @@
+{
+  "name": "SI GURU – Smart Administration Generator",
+  "description": "Generator Administrasi Guru Otomatis dan Terintegrasi SMK Negeri 1 Bebandem Tahun Ajaran 2026/2027 berbasis AI",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
