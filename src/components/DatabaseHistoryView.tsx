@@ -4,17 +4,18 @@ import { generateGoogleAppsScriptCode, exportTableToCSV, downloadCSV } from '../
 import {
   Database,
   Search,
-  Filter,
   Copy,
   Check,
   Download,
   Trash2,
   Copy as DuplicateIcon,
   ExternalLink,
-  Table,
   RefreshCw,
-  Send,
-  CloudCheck,
+  Lock,
+  Unlock,
+  KeyRound,
+  ShieldCheck,
+  AlertCircle,
 } from 'lucide-react';
 
 interface HistoryProps {
@@ -32,6 +33,13 @@ export const DatabaseHistoryView: React.FC<HistoryProps> = ({
   onDeleteRecord,
   onSyncWebhook,
 }) => {
+  // Password protection state - Requires "ming"
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('siguru_db_unlocked') === 'true';
+  });
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterSubject, setFilterSubject] = useState('ALL');
   const [filterGrade, setFilterGrade] = useState('ALL');
@@ -41,6 +49,24 @@ export const DatabaseHistoryView: React.FC<HistoryProps> = ({
   const [appsScriptUrl, setAppsScriptUrl] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === 'ming') {
+      setIsUnlocked(true);
+      sessionStorage.setItem('siguru_db_unlocked', 'true');
+      setPasswordError(null);
+      setPasswordInput('');
+    } else {
+      setPasswordError('Password salah! Silakan masukkan password yang benar untuk membuka database.');
+    }
+  };
+
+  const handleLockAgain = () => {
+    setIsUnlocked(false);
+    sessionStorage.removeItem('siguru_db_unlocked');
+    setPasswordInput('');
+  };
 
   // Copy Code.gs
   const handleCopyCode = () => {
@@ -72,6 +98,70 @@ export const DatabaseHistoryView: React.FC<HistoryProps> = ({
     }
   };
 
+  // If locked, render the password protection screen
+  if (!isUnlocked) {
+    return (
+      <div className="max-w-md mx-auto my-12 p-6 sm:p-8 bg-white rounded-3xl shadow-2xl border border-slate-200 text-center space-y-6">
+        <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-600 border border-amber-300 flex items-center justify-center mx-auto shadow-inner">
+          <Lock className="w-8 h-8" />
+        </div>
+
+        <div>
+          <span className="text-[11px] font-bold text-amber-700 uppercase tracking-widest bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+            DATABASE TERKUNCI (PASSWORD PROTECTED)
+          </span>
+          <h2 className="text-xl sm:text-2xl font-black text-slate-900 mt-2.5">
+            Akses Database Administrasi
+          </h2>
+          <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+            Data Google Spreadsheet dan arsip administrasi guru SMK Negeri 1 Bebandem dilindungi kata sandi keamanan.
+          </p>
+        </div>
+
+        <form onSubmit={handleUnlock} className="space-y-4">
+          <div className="relative text-left">
+            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Masukkan Password Database:
+            </label>
+            <div className="relative">
+              <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => {
+                  setPasswordInput(e.target.value);
+                  setPasswordError(null);
+                }}
+                placeholder="Ketik password database..."
+                autoFocus
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none font-medium"
+              />
+            </div>
+          </div>
+
+          {passwordError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center gap-2 text-left">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              <span>{passwordError}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="w-full bg-gradient-to-r from-blue-700 to-indigo-800 hover:from-blue-800 hover:to-indigo-900 text-white font-bold py-3 rounded-xl shadow-lg shadow-blue-700/20 active:scale-95 transition-all text-sm cursor-pointer flex items-center justify-center gap-2"
+          >
+            <Unlock className="w-4 h-4" />
+            <span>Buka Kunci Database</span>
+          </button>
+        </form>
+
+        <div className="text-[11px] text-slate-400">
+          SMK Negeri 1 Bebandem &bull; Sistem Administrasi Pembelajaran 2026/2027
+        </div>
+      </div>
+    );
+  }
+
   // Filter records
   const filteredRecords = records.filter((rec) => {
     const matchSearch =
@@ -95,9 +185,15 @@ export const DatabaseHistoryView: React.FC<HistoryProps> = ({
       <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 rounded-2xl p-6 sm:p-8 text-white shadow-xl border border-blue-900/50">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <span className="bg-cyan-500/20 text-cyan-300 font-bold text-xs uppercase px-2.5 py-1 rounded-full tracking-wider border border-cyan-400/30">
-              DATABASE SINKRONISASI 6 SHEET
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="bg-cyan-500/20 text-cyan-300 font-bold text-xs uppercase px-2.5 py-1 rounded-full tracking-wider border border-cyan-400/30">
+                DATABASE SINKRONISASI 6 SHEET
+              </span>
+              <span className="bg-emerald-500/20 text-emerald-300 font-bold text-xs uppercase px-2.5 py-1 rounded-full border border-emerald-400/30 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Terverifikasi</span>
+              </span>
+            </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold mt-2 text-white">
               Database Administrasi & Google Spreadsheet Sync
             </h1>
@@ -116,6 +212,15 @@ export const DatabaseHistoryView: React.FC<HistoryProps> = ({
             >
               <Download className="w-4 h-4 text-cyan-300" />
               <span>Ekspor CSV Semua Sheet</span>
+            </button>
+
+            <button
+              onClick={handleLockAgain}
+              className="bg-slate-800 hover:bg-slate-700 text-amber-300 font-semibold text-xs px-3.5 py-2.5 rounded-xl border border-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
+              title="Kunci Kembali Akses Database"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Kunci Database</span>
             </button>
           </div>
         </div>
@@ -284,7 +389,6 @@ export const DatabaseHistoryView: React.FC<HistoryProps> = ({
                       <span className="text-blue-700">{rec.learning.topic}</span>
                     </p>
                     <div className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1.5 pt-1">
-                      <CloudCheck className="w-3.5 h-3.5 text-emerald-600" />
                       <span>{docCount} Administrasi Lengkap Tersimpan</span>
                     </div>
                   </div>

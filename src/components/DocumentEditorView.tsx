@@ -430,6 +430,7 @@ export const DocumentEditorView: React.FC<DocumentEditorProps> = ({
           {/* Editable Document Body */}
           {viewMode === 'edit' ? (
             <div
+              key={currentDocType}
               ref={editorRef}
               contentEditable
               suppressContentEditableWarning
@@ -446,6 +447,7 @@ export const DocumentEditorView: React.FC<DocumentEditorProps> = ({
             />
           ) : (
             <div
+              key={currentDocType}
               dangerouslySetInnerHTML={{ __html: docContent }}
               className="prose max-w-none text-slate-900 leading-relaxed text-[15px]"
             />
