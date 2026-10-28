@@ -259,6 +259,232 @@ Kembalikan HANYA HTML bersih hasil pembaruan.
   return res.json({ content: refined });
 });
 
+
+// 5. API: Google Spreadsheet Web App Sync Proxy (Solves browser CORS & follows redirects)
+app.post('/api/sync-sheets', async (req, res) => {
+  const { webAppUrl, record } = req.body;
+  if (!webAppUrl || typeof webAppUrl !== 'string' || !webAppUrl.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'URL Google Apps Script wajib diisi. Silakan tempel URL Web App dari menu Terapkan Google Spreadsheet.',
+    });
+  }
+
+  const cleanUrl = webAppUrl.trim();
+
+  // Diagnostic 1: User pasted spreadsheet link instead of Web App URL
+  if (cleanUrl.includes('docs.google.com/spreadsheets')) {
+    return res.status(400).json({
+      success: false,
+      message: 'GAGAL: Anda memasukkan tautan Google Spreadsheet, BUKAN URL Aplikasi Web! Ikuti langkah: Buka Spreadsheet > Ekstensi > Apps Script > Terapkan (Deploy) > Penerapan Baru > Aplikasi Web, lalu salin URL yang berakhiran "/exec".',
+    });
+  }
+
+  // Diagnostic 2: User pasted /dev testing URL
+  if (cleanUrl.endsWith('/dev')) {
+    return res.status(400).json({
+      success: false,
+      message: 'GAGAL: URL Anda berakhiran "/dev" (URL pengujian pribadi). Di Google Apps Script, klik Terapkan > Kelola Penerapan > Salin URL Aplikasi Web resmi yang berakhiran "/exec".',
+    });
+  }
+
+  // Diagnostic 3: Invalid domain
+  if (!cleanUrl.includes('script.google.com/macros/s/')) {
+    return res.status(400).json({
+      success: false,
+      message: 'GAGAL: Format URL tidak valid. URL resmi Google Apps Script harus berformat: https://script.google.com/macros/s/.../exec',
+    });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+    const payload = JSON.stringify({
+      action: 'SYNC_ALL',
+      record: record || {},
+    });
+
+    const response = await fetch(cleanUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: payload,
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    const responseText = await response.text();
+
+    // Diagnostic 4: Error 404 - File/Deployment not found
+    if (
+      response.status === 404 ||
+      responseText.includes('檔案不存在') ||
+      responseText.includes('File not found') ||
+      responseText.includes('does not exist') ||
+      responseText.includes('找不到網頁')
+    ) {
+      return res.status(404).json({
+        success: false,
+        code: 'URL_NOT_FOUND',
+        message: 'URL Web App Google Apps Script Tidak Ditemukan (Error 404). Kemungkinan penyebab: 1) Anda menyalin Script ID dari address bar editor browser (bukan dari tombol Terapkan), atau 2) Penerapan belum dibuat/disimpan. Solusi: Buka Apps Script > klik tombol Terapkan (Deploy) di kanan atas > Kelola Penerapan > Salin URL Aplikasi Web yang berakhiran "/exec".',
+      });
+    }
+
+    // Diagnostic 5: Access set to "Only myself" redirecting to Google Login
+    if (
+      response.status === 401 ||
+      response.status === 403 ||
+      responseText.includes('ServiceLogin') ||
+      responseText.includes('accounts.google.com') ||
+      responseText.includes('Sign in - Google Accounts')
+    ) {
+      return res.status(403).json({
+        success: false,
+        code: 'PERMISSION_DENIED',
+        message: 'GAGAL OTORISASI: Web App Anda saat ini disetel dengan akses "Hanya saya" (Only myself) atau dibatasi domain sekolah. Cara memperbaikinya: Buka Google Apps Script > Terapkan > Kelola Penerapan > Klik ikon Pensil (Edit) > Pada "Siapa yang memiliki akses", pilih "Siapa saja" (Anyone) > Klik Terapkan.',
+      });
+    }
+
+    try {
+      const data = JSON.parse(responseText);
+      if (data.status === 'SUCCESS' || response.ok) {
+        return res.json({
+          success: true,
+          message: data.message || 'Data berhasil disinkronkan ke 6 Sheet Google Spreadsheet!',
+          timestamp: data.timestamp || new Date().toLocaleString('id-ID'),
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: data.error || data.message || 'Google Apps Script merespons kesalahan saat menulis data.',
+        });
+      }
+    } catch {
+      if (response.ok) {
+        return res.json({
+          success: true,
+          message: 'Data berhasil terkirim ke Google Apps Script!',
+          timestamp: new Date().toLocaleString('id-ID'),
+        });
+      }
+      return res.status(500).json({
+        success: false,
+        message: `Google Apps Script merespons status ${response.status}: ${responseText.slice(0, 180)}`,
+      });
+    }
+  } catch (err: any) {
+    console.error('Server sync-sheets error:', err);
+    if (err.name === 'AbortError') {
+      return res.status(504).json({
+        success: false,
+        message: 'Koneksi ke Google Apps Script batas waktu (timeout). Pastikan spreadsheet Anda aktif dan coba kembali.',
+      });
+    }
+    return res.status(500).json({
+      success: false,
+      message: `Gagal menghubungi Google Apps Script: ${err.message}`,
+    });
+  }
+});
+
+// 6. API: Test Google Spreadsheet Web App Connection (GET check)
+app.post('/api/test-sheets-url', async (req, res) => {
+  const { webAppUrl } = req.body;
+  if (!webAppUrl || typeof webAppUrl !== 'string' || !webAppUrl.trim()) {
+    return res.json({ success: false, message: 'URL tidak boleh kosong. Masukkan URL Web App Google Apps Script.' });
+  }
+
+  const cleanUrl = webAppUrl.trim();
+  if (cleanUrl.includes('docs.google.com/spreadsheets')) {
+    return res.json({
+      success: false,
+      message: 'Ini tautan Google Spreadsheet biasa, bukan URL Aplikasi Web. Salin URL dari Apps Script > Terapkan > Kelola Penerapan.',
+    });
+  }
+  if (!cleanUrl.includes('script.google.com/macros/s/')) {
+    return res.json({
+      success: false,
+      message: 'Format URL tidak valid. Harus diawali: https://script.google.com/macros/s/... dan berakhiran /exec',
+    });
+  }
+  if (cleanUrl.endsWith('/dev')) {
+    return res.json({
+      success: false,
+      message: 'URL berakhiran /dev (mode pengujian pribadi). Di Google Apps Script, klik Terapkan > Kelola Penerapan > Salin URL resmi yang berakhiran /exec.',
+    });
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(cleanUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    const text = await response.text();
+
+    // Check for 404 / does not exist
+    if (
+      response.status === 404 ||
+      text.includes('檔案不存在') ||
+      text.includes('File not found') ||
+      text.includes('does not exist') ||
+      text.includes('找不到網頁')
+    ) {
+      return res.json({
+        success: false,
+        code: 'URL_NOT_FOUND',
+        message: 'URL Web App TIDAK DITEMUKAN oleh Google (Error 404). Pastikan Anda telah mengklik tombol Terapkan (Deploy) > Penerapan Baru > Aplikasi Web, bukan menyalin ID dari address bar editor.',
+      });
+    }
+
+    if (
+      response.status === 401 ||
+      response.status === 403 ||
+      text.includes('accounts.google.com') ||
+      text.includes('ServiceLogin')
+    ) {
+      return res.json({
+        success: false,
+        code: 'PERMISSION_DENIED',
+        message: 'Web App terdeteksi, namun akses masih terkunci "Hanya Saya" (Only myself) atau akun domain. Ubah ke "Siapa saja" (Anyone) di menu Penerapan Google Apps Script.',
+      });
+    }
+
+    if (!response.ok) {
+      return res.json({
+        success: false,
+        message: `Google Apps Script merespons status HTTP ${response.status}: ${text.slice(0, 120)}`,
+      });
+    }
+
+    try {
+      const json = JSON.parse(text);
+      return res.json({
+        success: true,
+        message: `Koneksi Berhasil! Status: ${json.status || 'ONLINE'} - ${json.school || 'SMK Negeri 1 Bebandem'}`,
+      });
+    } catch {
+      return res.json({
+        success: true,
+        message: 'Koneksi terhubung ke Google Apps Script (HTTP 200 OK)!',
+      });
+    }
+  } catch (err: any) {
+    return res.json({
+      success: false,
+      message: `Gagal menghubungi URL: ${err.message}`,
+    });
+  }
+});
+
 // Setup Vite or static serving
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';

@@ -258,7 +258,9 @@ export default function App() {
     showToast('Arsip dokumen berhasil dihapus.');
   };
 
-  const handleSyncWebhook = async (url: string): Promise<boolean> => {
+  const handleSyncWebhook = async (
+    url: string
+  ): Promise<{ success: boolean; message: string }> => {
     try {
       const currentRecord: SavedRecord = {
         id: `rec-${Date.now()}`,
@@ -277,19 +279,65 @@ export default function App() {
         },
       };
 
-      const res = await fetch(url, {
+      const res = await fetch('/api/sync-sheets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'SYNC_ALL',
+          webAppUrl: url,
           record: currentRecord,
         }),
       });
 
-      return res.ok;
-    } catch (e) {
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSavedRecords((prev) => {
+          const exists = prev.some((r) => r.id === currentRecord.id);
+          return exists ? prev : [currentRecord, ...prev];
+        });
+        showToast('Sinkronisasi Google Spreadsheet BERHASIL!');
+        return {
+          success: true,
+          message: data.message || 'Data berhasil disinkronkan ke 6 Sheet Google Spreadsheet!',
+          code: data.code,
+        };
+      } else {
+        return {
+          success: false,
+          message: data.message || 'Gagal menyambung ke Google Apps Script.',
+          code: data.code,
+        };
+      }
+    } catch (e: any) {
       console.error('Webhook sync failed:', e);
-      return false;
+      return {
+        success: false,
+        message: `Koneksi gagal: ${e.message}. Pastikan server aktif dan URL Web App valid.`,
+        code: 'NETWORK_ERROR',
+      };
+    }
+  };
+
+  const handleTestSheetsUrl = async (
+    url: string
+  ): Promise<{ success: boolean; message: string; code?: string }> => {
+    try {
+      const res = await fetch('/api/test-sheets-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ webAppUrl: url }),
+      });
+      const data = await res.json();
+      return {
+        success: !!data.success,
+        message: data.message || 'Pengujian koneksi selesai.',
+        code: data.code,
+      };
+    } catch (e: any) {
+      return {
+        success: false,
+        message: `Gagal menguji koneksi: ${e.message}`,
+        code: 'NETWORK_ERROR',
+      };
     }
   };
 
@@ -443,6 +491,7 @@ export default function App() {
             onDuplicateRecord={handleDuplicateRecord}
             onDeleteRecord={handleDeleteRecord}
             onSyncWebhook={handleSyncWebhook}
+            onTestSheetsUrl={handleTestSheetsUrl}
           />
         )}
       </main>
